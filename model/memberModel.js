@@ -8,43 +8,68 @@ let jwt = require('jsonwebtoken');
 let config = require('./config');
 var memberDB = {
     checkMemberLogin: function (email, password) {
-        return new Promise( ( resolve, reject ) => {
+        return new Promise((resolve, reject) => {
+            console.log('Starting checkMemberLogin with email:', email);
+
             var conn = db.getConnection();
             conn.connect(function (err) {
                 if (err) {
-                    console.log(err);
+                    console.error('Database connection error:', err);
                     conn.end();
                     return reject(err);
-                }
-                else {
+                } else {
                     var sql = 'SELECT * FROM memberentity m WHERE m.EMAIL=?';
-                    conn.query( sql, [email], (err, result) => {
-                        if (err){
+                    conn.query(sql, [email], (err, result) => {
+                        if (err) {
+                            console.error('SQL query error:', err);
                             conn.end();
                             return reject(err);
-                        }
-                        else {
-                            if(result == null || result == undefined || result == '') {
+                        } else {
+                            console.log('Query result:', result);
+                            if (!result || result.length === 0) {
+                                console.log('No user found with the given email.');
                                 conn.end();
-                                return resolve({success:false});
+                                return resolve({ success: false });
                             }
+
                             var member = new Member();
                             member.email = result[0].EMAIL;
                             member.passwordHash = result[0].PASSWORDHASH;
+                            console.log('Member retrieved:', member);
 
-                            bcrypt.compare(password, member.passwordHash, function(err, res) {
-                                if(res) {
-                                    var token = jwt.sign({username: member.email},
-                                        config.secret,
-                                        { 
-                                            expiresIn: '12h'
+                            bcrypt.compare(password, member.passwordHash, function (err, res) {
+                                if (err) {
+                                    console.error('bcrypt compare error:', err);
+                                    conn.end();
+                                    return reject(err);
+                                }
+
+                                console.log('Password comparison result:', res);
+                                if (res) {
+                                    try {
+                                        console.log('JWT secret:', config.secret);
+                                        // Check if config.secret is a valid string
+                                        if (typeof config.secret !== 'string' || !config.secret) {
+                                            throw new Error('Invalid JWT secret');
                                         }
-                                    );
-                                    conn.end();
-                                    return resolve({success:true, email:member.email, token: token});
+
+                                        var token = jwt.sign(
+                                            { username: member.email },
+                                            config.secret,
+                                            { expiresIn: '12h' }
+                                        );
+                                        console.log('JWT token generated:', token);
+                                        conn.end();
+                                        return resolve({ success: true, email: member.email, token: token });
+                                    } catch (tokenError) {
+                                        console.error('JWT signing error:', tokenError);
+                                        conn.end();
+                                        return reject(tokenError);
+                                    }
                                 } else {
+                                    console.log('Password does not match.');
                                     conn.end();
-                                    return resolve({success:false});
+                                    return resolve({ success: false });
                                 }
                             });
                         }
@@ -594,8 +619,8 @@ var memberDB = {
 };
 module.exports = memberDB
 
-var generateRandomNumber = function(digits){
-    return crypto.randomBytes(Math.ceil(digits/2)).toString('hex');
+var generateRandomNumber = function (digits) {
+    return crypto.randomBytes(Math.ceil(digits / 2)).toString('hex');
 };
 
 var emailer = nodemailer.createTransport({
